@@ -1,5 +1,7 @@
 # Extremely Simple Neighbor Particle Search Tree
-header-only C++ library
+header-only C++ library.
+Periodic boundary is supported.
+Test (Demo) is shown in test_neighbor_particle_search_tree.cpp
 
 ## Instalation
 ```sh
@@ -12,11 +14,11 @@ If positions of particles change, then you need to resizse (if number of particl
 
 ### Example
 ```c++
-    Tree::NeighborParticleSearchTree tree(DIM, reserved_size);
-    tree.Resize(num_of_particles); //change actual number of particles to be searched for.
+    Tree::NeighborParticleSearchTree tree(DIM, reserved_size); //reserved_size is number of particles allocated inside tree in advance
+    tree.Resize(num_of_particles); //change actual number of particles to be searched for. Note that num_of_particles <=  reserved_size.
     for(int i = 0;i<num_of_particles;++i) //Arrange particles in a cube diagonal. The size of cube: size_x, size_y, size_z = [0,100]
-        for(int dim = 0;dim<3;++dim)
-            tree.CopyPos(i, i, dim); //copy pos[dim] to ith_particle[dim] inside the tree 
+        for(int dim = 0;dim<DIM;++dim)
+            tree.CopyPos(pos[i][dim], i, dim); //copy pos[i][dim] to ith_particle[dim] inside the tree 
         
     tree.UpdateTree(); //construct tree. Needs to be called after update particle positions
     tree.FindNeighborParticle(point_of_search, search_radius, interaction_list); //Store the index of the particle in the region of search_radius from point_of_search into interaction_list
