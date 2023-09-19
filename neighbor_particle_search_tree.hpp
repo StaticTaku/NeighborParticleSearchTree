@@ -80,54 +80,87 @@ namespace Tree {
 
     class NeighborParticleSearchTree {
     public:
-        NeighborParticleSearchTree(unsigned int _DIM, unsigned int reserve_number):m_reserve_num(reserve_number), DIM(_DIM), NSUB(1<<_DIM){
+        NeighborParticleSearchTree(unsigned int _DIM, unsigned int reserve_number):m_reserve_num(reserve_number), DIM(_DIM), m_NSUB(1<<_DIM){
             TREE_PRINT_INFO("start\n");
-            bodies = new Body[reserve_number];
-            boundary_length_ = new double[_DIM];
+            m_bodies = new Body[reserve_number];
+            m_boundary_length = new double[_DIM];
 
             for(int i = 0;i<reserve_number;++i) {
-                bodies[i].type   = Type::Body;
-                bodies[i].update = true;
-                bodies[i].id     = i;
+                m_bodies[i].type   = Type::Body;
+                m_bodies[i].update = true;
+                m_bodies[i].id     = i;
             }
             TREE_PRINT_INFO("finish\n");
+        }
+
+        NeighborParticleSearchTree(const NeighborParticleSearchTree&) = delete;
+        NeighborParticleSearchTree& operator=(const NeighborParticleSearchTree&) = delete;
+        
+        NeighborParticleSearchTree(NeighborParticleSearchTree&& o):
+        m_reserve_num(o.m_reserve_num), m_size(o.m_size), DIM(o.DIM), m_NSUB(o.m_NSUB),
+        m_rsize(o.m_rsize), m_first_call((o.m_first_call)), m_root(o.m_root), 
+        m_bodies(o.m_bodies), m_free_cell(o.m_free_cell), m_boundary_length(o.m_boundary_length) {
+            o.m_root            = nullptr;
+            o.m_bodies          = nullptr;
+            o.m_free_cell       = nullptr;
+            o.m_boundary_length = nullptr;
+        }
+
+        NeighborParticleSearchTree& operator=(NeighborParticleSearchTree&& o) {
+            if (&o == this)
+                return *this;
+            delete [] m_root, delete [] m_bodies, delete [] m_free_cell, delete [] m_boundary_length;
+
+            m_root            = o.m_root;
+            m_bodies          = o.m_bodies;
+            m_free_cell       = o.m_free_cell;
+            m_boundary_length = o.m_boundary_length;
+            
+            m_reserve_num = o.m_reserve_num, m_size = o.m_size, DIM = o.DIM, m_NSUB= o.m_NSUB,
+            m_rsize= o.m_rsize, m_first_call = o.m_first_call, m_root= o.m_root, 
+            m_bodies= o.m_bodies, m_free_cell= o.m_free_cell;
+
+            o.m_root             = nullptr;
+            o.m_bodies           = nullptr;
+            o.m_free_cell        = nullptr;
+            o.m_boundary_length  = nullptr;
+
+            return *this;
         }
 
         ~NeighborParticleSearchTree() {
             TREE_PRINT_INFO("start\n");
             NewTree();
             Cell* c;
-            while(freeCell != nullptr) {
-                c = static_cast<Cell*>(freeCell);
-                freeCell = c->next;
+            while(m_free_cell != nullptr) {
+                c = static_cast<Cell*>(m_free_cell);
+                m_free_cell = c->next;
                 delete c;
             }
-            if(freeCell != nullptr)
-                delete freeCell;
-        
-            delete[] bodies;
-            delete[] boundary_length_;
+
+            delete m_free_cell;
+            delete[] m_bodies;
+            delete[] m_boundary_length;
             TREE_PRINT_INFO("finish\n");
         }
 
         void Resize(int size) {
             if(size <= m_reserve_num )
                 m_size = size;
-            else {
+            else
                 TREE_PRINT_ERROR(stdout, "Size exceeds reserved size\n");
-            }
         }
 
         void CopyPos(double pos_x, unsigned int id, unsigned int dim) {
             if(id < m_size && dim < DIM)
-                bodies[id].position[dim] = pos_x;
+                m_bodies[id].position[dim] = pos_x;
             else
                 TREE_PRINT_ERROR(stdout, "Acces to outside of memory\n");
         }
 
         double GetPos(unsigned int id, unsigned int dim) {
             if(id < m_size && dim < DIM)
-                return bodies[id].position[dim];
+                return m_bodies[id].position[dim];
             else
                 TREE_PRINT_ERROR(stdout, "Acces to outside of memory\n");
         }
@@ -136,14 +169,13 @@ namespace Tree {
             TREE_PRINT_INFO("start\n");
             Body* p;
             NewTree();
-            root = MakeCell();
-            root->ClearPosition(DIM);
+            m_root = MakeCell();
+            m_root->ClearPosition(DIM);
             ExpandBox();
-            for(p = bodies;p<bodies+m_size;++p)
+            for(p = m_bodies;p<m_bodies+m_size;++p)
                 LoadBody(p);
-            tdepth = 0;
-            PropagateInfo(root, rsize, 0);
-            ThreadTree(root,nullptr);
+            PropagateInfo(m_root, m_rsize, 0);
+            ThreadTree(m_root,nullptr);
             TREE_PRINT_INFO("finish\n");
         }
 
@@ -151,7 +183,7 @@ namespace Tree {
             TREE_PRINT_INFO("start\n");
             if(clear)
                 interaction_list.clear();
-            WalkTree(pos,radius,interaction_list,root,rsize);
+            WalkTree(pos,radius,interaction_list,m_root,m_rsize);
             TREE_PRINT_INFO("finish\n");
         }
 
@@ -160,80 +192,74 @@ namespace Tree {
             if(clear)
                 interaction_list.clear();
             for(int dim = 0;dim < DIM; ++dim)
-                boundary_length_[dim] = boundary_length[dim];
-            WalkTreeWithPeriodicBoundary(pos,radius,interaction_list,root,rsize);
+                m_boundary_length[dim] = boundary_length[dim];
+            WalkTreeWithPeriodicBoundary(pos,radius,interaction_list,m_root,m_rsize);
             TREE_PRINT_INFO("finish\n");
         }
 
     private:
         int m_reserve_num;
         int m_size;
-
-        Cell* root;//root pointer
-        Body* bodies;
-        Node* freeCell = nullptr;
-        Node** active;
-
+        Cell* m_root;//root pointer
+        Body* m_bodies;
+        Node* m_free_cell = nullptr;
+        double* m_boundary_length;
         int DIM;
-        int NSUB;
-        int tdepth;//木の高さ
-        double length;
-        double rsize = 1;//root size
-        double* boundary_length_;
-
-        bool first_call = true;
+        int m_NSUB;
+        double m_rsize = 1;//m_root size
+        bool m_first_call = true;
 
         void NewTree() {
             Node* p;
-            if(!first_call) {
-                p = root;
+            if(!m_first_call) {
+                p = m_root;
                 while(p != nullptr) {
                     if(p->type == Type::Cell) {
-                        p->next = freeCell;
-                        freeCell = p;
+                        p->next = m_free_cell;
+                        m_free_cell = p;
                         p = static_cast<Cell*>(p)->more;
                     }else {
                         p = p->next;
                     }
                 }
             }else {
-                first_call = false;
+                m_first_call = false;
             }
-            root = nullptr;
+            m_root = nullptr;
         }
 
         Cell* MakeCell() {
             Cell* c;
             int i;
-            if(freeCell == nullptr) {
+            if(m_free_cell == nullptr) {
                 c = new Cell(DIM);
             }
             else {
-                c = static_cast<Cell*>(freeCell);
-                freeCell = c->next;
+                c = static_cast<Cell*>(m_free_cell);
+                m_free_cell = c->next;
             }
             c->type = Type::Cell;
             c->update = false;
-            for(int i = 0;i<NSUB;++i)
+            for(int i = 0;i<m_NSUB;++i)
                 c->subP[i] = nullptr;
             
             return c;
         }
 
         void ExpandBox() {
-            rsize = 1;
+            m_rsize = 1;
             double dmax = 0,d;
             Body* p;
-            for(p = bodies;p<bodies + m_size;++p) {
+            for(p = m_bodies;p<m_bodies + m_size;++p) {
                 for(int dim = 0;dim<DIM;++dim) {
-                    d = std::abs(p->position[dim]-root->position[dim]);
+                    d = std::abs(p->position[dim]-m_root->position[dim]);
                     if(d > dmax)
                         dmax = d;
                 }
             }
 
-            while(rsize < 2*dmax)
-                rsize = 2*rsize;
+            while(m_rsize < 2*dmax)
+                m_rsize = 2*m_rsize;
         }
 
         void LoadBody(Body* p) {
@@ -241,9 +267,9 @@ namespace Tree {
             int qind,k;
             double qsize, dist2;
 
-            q = root;
+            q = m_root;
             qind = SubIndex(p,q);
-            qsize = rsize;
+            qsize = m_rsize;
             
             while(q->subP[qind] != nullptr) {
                 if(q->subP[qind]->type == Type::Body) {
@@ -274,15 +300,14 @@ namespace Tree {
             ind = 0;
             for(k = 0;k<DIM;++k) {
                 if(q->position[k] <= p->position[k])
-                    ind += NSUB >> (k+1);
+                    ind += m_NSUB >> (k+1);
             }
             return ind;
         }
 
         void PropagateInfo(Cell* p, double psize, int lev) {
             Node* q;
-            tdepth = std::max(tdepth,lev);
-            for(int i = 0;i<NSUB;++i) {
+            for(int i = 0;i<m_NSUB;++i) {
                 if((q=p->subP[i]) != nullptr) {
                     if(q->type == Type::Cell)
                         PropagateInfo(static_cast<Cell*>(q), psize/2, lev+1);
@@ -293,13 +318,13 @@ namespace Tree {
 
         void ThreadTree(Node* p, Node* n) {
             int ndesc, i;
-            Node* desc[NSUB+1];
+            Node* desc[m_NSUB+1];
 
             p->next = n;
             if(p->type == Type::Cell)
             {
                 ndesc = 0;
-                for(i = 0;i<NSUB;++i)
+                for(i = 0;i<m_NSUB;++i)
                     if(static_cast<Cell*>(p)->subP[i] != nullptr)
                         desc[ndesc++] = static_cast<Cell*>(p)->subP[i];
                 
@@ -365,10 +390,10 @@ namespace Tree {
 
         double PeriodicDistance(double x1, double x2, int dim) {
             double X = x1-x2;
-            if(X>0.5*boundary_length_[dim]){
-                X -= boundary_length_[dim];
-            } else if(X<-0.5*boundary_length_[dim]){
-                X += boundary_length_[dim];
+            if(X>0.5*m_boundary_length[dim]){
+                X -= m_boundary_length[dim];
+            } else if(X<-0.5*m_boundary_length[dim]){
+                X += m_boundary_length[dim];
             }
             return X;
         }
