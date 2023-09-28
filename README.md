@@ -56,6 +56,10 @@ tree.FindNeighborParticle<Tree::SearchMode::SYMMETRY>(point_of_search, search_ra
 tree.FindNeighborParticleWithPeriodicBoundary<Tree::SearchMode::SYMMETRY>(point_of_search, search_radius, periodic_boundary_length, interaction_list);
 ```
 
+## Macro
+### TREE_DEBUG
+Print debug info.
+
 ## how to run test (or demo)
 ```sh
 g++ -std=c++17 -O3 test_neighbor_particle_search_tree.cpp && ./a.out
