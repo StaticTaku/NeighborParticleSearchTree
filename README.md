@@ -1,6 +1,6 @@
 # Extremely Simple Neighbor Particle Search Tree
-header-only C++ library.
-Periodic boundary is supported.
+header-only C++ library. \
+Periodic boundary is supported. \
 Test (Demo) is shown in test_neighbor_particle_search_tree.cpp
 
 ## Instalation
@@ -9,7 +9,7 @@ git clone https://github.com/StaticTaku/neighbor_particle_search_tree.git
 ```
 
 ## Usage
-Create an object, resize, copy particle positions, update tree, then you can find neighbor particles near any points!
+Create an object, resize, copy particle positions, update tree, then you can find neighbor particles near any points! \
 If positions of particles change, then you need to resizse (if number of particles changes), copy particle positions that has changed its positions, update tree, then you can find neighbor particles near any points!
 
 ### Example
@@ -24,7 +24,39 @@ If positions of particles change, then you need to resizse (if number of particl
     tree.FindNeighborParticle(point_of_search, search_radius, interaction_list); //Store the index of the particle in the region of search_radius from point_of_search into interaction_list
 ```
 
+## Search Option
+### GATHER (Default)
+Search radius is finite. \
+Particles within a radius `search_radius` centered on `point_of_search` are registered as neighboring particles in interaction_list.
+```c++
+tree.FindNeighborParticle(point_of_search, search_radius, interaction_list);
+
+tree.FindNeighborParticleWithPeriodicBoundary(point_of_search, search_radius, periodic_boundary_length, interaction_list);
+```
+or
+```c++
+tree.FindNeighborParticle<Tree::SearchMode::GATHER>(point_of_search, search_radius, interaction_list);
+
+tree.FindNeighborParticle<Tree::SearchMode::GATHER>(point_of_search, search_radius, periodic_boundary_length, interaction_list);
+```
+### SYMMETRY
+Search radius is finite. \
+Need to set search radius of all particles `search_radius_list` before `tree.UpdateTree()`.
+```c++
+for(int i = 0;i<num_of_particles;++i)
+    tree.CopySearchRadius(search_radius_list[i], i);
+```
+1. Particles within a radius `search_radius` centered on `point_of_search` and 
+2. Any particles `j` that covers the position `point_of_search` within a radius `search_radius_list[j]` centered on `position[j]` 
+
+are registered as neighboring particles in interaction_list.
+```c++
+tree.FindNeighborParticle<Tree::SearchMode::SYMMETRY>(point_of_search, search_radius, interaction_list);
+
+tree.FindNeighborParticleWithPeriodicBoundary<Tree::SearchMode::SYMMETRY>(point_of_search, search_radius, periodic_boundary_length, interaction_list);
+```
+
 ## how to run test (or demo)
 ```sh
-g++ test_neighbor_particle_search_tree.cpp -o test_neighbor_particle_search_tree.out && ./test_neighbor_particle_search_tree.out
+g++ -std=c++17 -O3 test_neighbor_particle_search_tree.cpp && ./a.out
 ```

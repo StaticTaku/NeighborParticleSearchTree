@@ -39,18 +39,24 @@ namespace Tree {
         Cell,
     };
 
+    enum class SearchMode : unsigned char {
+        GATHER,
+        SYMMETRY
+    };
+
     struct Node {
         Type type;
-        bool update;
         double position[3];
         Node* next;
     };
 
     struct Body:public Node {
         unsigned int id;
+        double search_radius = 0;
     };
 
     struct Cell:public Node {
+        double max_search_radius = 0;
         bool flag = false;
         Node* more = nullptr;
         Node** subP;
@@ -87,7 +93,6 @@ namespace Tree {
 
             for(int i = 0;i<reserve_number;++i) {
                 m_bodies[i].type   = Type::Body;
-                m_bodies[i].update = true;
                 m_bodies[i].id     = i;
             }
             TREE_PRINT_INFO("finish\n");
@@ -145,7 +150,7 @@ namespace Tree {
         }
 
         void Resize(int size) {
-            if(size <= m_reserve_num )
+            if(size <= m_reserve_num)
                 m_size = size;
             else
                 TREE_PRINT_ERROR(stdout, "Size exceeds reserved size\n");
@@ -154,6 +159,13 @@ namespace Tree {
         void CopyPos(double pos_x, unsigned int id, unsigned int dim) {
             if(id < m_size && dim < DIM)
                 m_bodies[id].position[dim] = pos_x;
+            else
+                TREE_PRINT_ERROR(stdout, "Acces to outside of memory\n");
+        }
+
+        void CopySearchRadius(double search_radius, unsigned int id) {
+            if(id < m_size)
+                m_bodies[id].search_radius = search_radius;
             else
                 TREE_PRINT_ERROR(stdout, "Acces to outside of memory\n");
         }
@@ -174,26 +186,28 @@ namespace Tree {
             ExpandBox();
             for(p = m_bodies;p<m_bodies+m_size;++p)
                 LoadBody(p);
-            PropagateInfo(m_root, m_rsize, 0);
+            //PropagateInfo(m_root, m_rsize, 0);
             ThreadTree(m_root,nullptr);
             TREE_PRINT_INFO("finish\n");
         }
-
+        
+        template <SearchMode SEARCH_MODE = SearchMode::GATHER>
         void FindNeighborParticle(const double* pos, const double radius, std::vector<unsigned int>& interaction_list, bool clear = true) {
             TREE_PRINT_INFO("start\n");
             if(clear)
                 interaction_list.clear();
-            WalkTree(pos,radius,interaction_list,m_root,m_rsize);
+            WalkTree<SEARCH_MODE>(pos,radius,interaction_list,m_root,m_rsize);
             TREE_PRINT_INFO("finish\n");
         }
 
+        template <SearchMode SEARCH_MODE = SearchMode::GATHER>
         void FindNeighborParticleWithPeriodicBoundary(const double* pos, const double radius, const double* boundary_length, std::vector<unsigned int>& interaction_list, bool clear = true) {
             TREE_PRINT_INFO("start\n");
             if(clear)
                 interaction_list.clear();
             for(int dim = 0;dim < DIM; ++dim)
                 m_boundary_length[dim] = boundary_length[dim];
-            WalkTreeWithPeriodicBoundary(pos,radius,interaction_list,m_root,m_rsize);
+            WalkTreeWithPeriodicBoundary<SEARCH_MODE>(pos,radius,interaction_list,m_root,m_rsize);
             TREE_PRINT_INFO("finish\n");
         }
 
@@ -239,10 +253,9 @@ namespace Tree {
                 m_free_cell = c->next;
             }
             c->type = Type::Cell;
-            c->update = false;
             for(int i = 0;i<m_NSUB;++i)
                 c->subP[i] = nullptr;
-            
+            c->max_search_radius = 0;
             return c;
         }
 
@@ -270,7 +283,7 @@ namespace Tree {
             q = m_root;
             qind = SubIndex(p,q);
             qsize = m_rsize;
-            
+            q->max_search_radius = std::max(q->max_search_radius, p->search_radius);
             while(q->subP[qind] != nullptr) {
                 if(q->subP[qind]->type == Type::Body) {
                     double dist2 = 0;
@@ -284,9 +297,11 @@ namespace Tree {
                     for(int k = 0;k<DIM;++k)
                         c->position[k] = q->position[k] + (p->position[k] < q->position[k] ? -qsize:qsize)/4;
                     c->subP[SubIndex(static_cast<Body*>(q->subP[qind]),c)] = q->subP[qind];
+                    c->max_search_radius = p->search_radius; //initialization of max_search_radius
                     q->subP[qind] = c;
                 }
                 q = static_cast<Cell*>(q->subP[qind]);
+                q->max_search_radius = std::max(q->max_search_radius, p->search_radius);
                 qind = SubIndex(p,q);
                 qsize = qsize/2;
                 if(qsize == 0)
@@ -311,7 +326,6 @@ namespace Tree {
                 if((q=p->subP[i]) != nullptr) {
                     if(q->type == Type::Cell)
                         PropagateInfo(static_cast<Cell*>(q), psize/2, lev+1);
-                    p->update |= q->update;
                 }
             }
         }
@@ -335,24 +349,44 @@ namespace Tree {
             }
         }
 
+        template <SearchMode SEARCH_MODE>
         void WalkTree(const double* pos,const double radius,std::vector<unsigned int>& interaction_list,Cell* p,double psize) {
             Node* q;
             //search all of p's direct descendants
-            for(q = p->more;q != p->next;q = q->next) {
-                if(q->type == Type::Cell && isNearTarget(pos,radius,q->position,psize/2))
-                    WalkTree(pos,radius,interaction_list,static_cast<Cell*>(q),psize/2);
-                else if(q->type == Type::Body)
-                {
-                    double length = 0;
+            if constexpr (SEARCH_MODE == SearchMode::GATHER) {
+                for(q = p->more;q != p->next;q = q->next) {
+                    if(q->type == Type::Cell && isNearTarget(pos,radius,q->position,psize/2))
+                        WalkTree<SEARCH_MODE>(pos,radius,interaction_list,static_cast<Cell*>(q),psize/2);
+                    else if(q->type == Type::Body)
+                    {
+                        double length = 0;
 
-                    for(int dim = 0;dim<DIM;++dim)
-                        length += (pos[dim] - q->position[dim])*(pos[dim] - q->position[dim]);
+                        for(int dim = 0;dim<DIM;++dim)
+                            length += (pos[dim] - q->position[dim])*(pos[dim] - q->position[dim]);
+                        
+                        if(length <= radius*radius)
+                            interaction_list.emplace_back(static_cast<Body*>(q)->id);
+                    }
+                }
+            }else if constexpr (SEARCH_MODE == SearchMode::SYMMETRY) {
+                for(q = p->more;q != p->next;q = q->next) {
+                    if(q->type == Type::Cell && (isNearTargetWithPeriodicBoundary(pos,radius,q->position,psize/2) || isNearTargetWithPeriodicBoundary(pos, static_cast<Cell*>(q)->max_search_radius, q->position, psize/2)))
+                        WalkTree<SEARCH_MODE>(pos,radius,interaction_list,static_cast<Cell*>(q),psize/2);
+                    else if(q->type == Type::Body)
+                    {
+                        double length = 0;
 
-                    if(length <= radius*radius)
-                        interaction_list.emplace_back(static_cast<Body*>(q)->id);
+                        for(int dim = 0;dim<DIM;++dim)
+                            length += (pos[dim] - q->position[dim])*(pos[dim] - q->position[dim]);
+                        
+                        double search_radius = static_cast<Body*>(q)->search_radius;
+                        if((length <= radius*radius) || (length <= search_radius * search_radius))
+                            interaction_list.emplace_back(static_cast<Body*>(q)->id);
+                    }
                 }
             }
         }
+
 
         bool isNearTarget(const double* pos, double radius,double* posCell, double cellSize) {
             double dx, farLen;
@@ -368,22 +402,42 @@ namespace Tree {
             return true;
         }
 
+        template <SearchMode SEARCH_MODE>
         void WalkTreeWithPeriodicBoundary(const double* pos,const double radius,std::vector<unsigned int>& interaction_list,Cell* p,double psize) {
             Node* q;
             //search all of p's direct descendants
-            for(q = p->more;q != p->next;q = q->next) {
-                if(q->type == Type::Cell && isNearTargetWithPeriodicBoundary(pos,radius,q->position,psize/2))
-                    WalkTreeWithPeriodicBoundary(pos,radius,interaction_list,static_cast<Cell*>(q),psize/2);
-                else if(q->type == Type::Body) {
-                    double length = 0;
+            if constexpr (SEARCH_MODE == SearchMode::GATHER) {
+                for(q = p->more;q != p->next;q = q->next) {
+                    if(q->type == Type::Cell && isNearTargetWithPeriodicBoundary(pos,radius,q->position,psize/2))
+                        WalkTreeWithPeriodicBoundary<SearchMode::GATHER>(pos,radius,interaction_list,static_cast<Cell*>(q),psize/2);
+                    else if(q->type == Type::Body) {
+                        double length = 0;
 
-                    for(int dim = 0;dim<DIM;++dim) {
-                        double dx = PeriodicDistance(pos[dim], q->position[dim], dim);
-                        length += dx * dx;
+                        for(int dim = 0;dim<DIM;++dim) {
+                            double dx = PeriodicDistance(pos[dim], q->position[dim], dim);
+                            length += dx * dx;
+                        }
+
+                        if(length <= radius*radius)
+                            interaction_list.emplace_back(static_cast<Body*>(q)->id);
                     }
+                }
+            }else if constexpr (SEARCH_MODE == SearchMode::SYMMETRY) {
+                for(q = p->more;q != p->next;q = q->next) {
+                    if(q->type == Type::Cell && (isNearTargetWithPeriodicBoundary(pos,radius,q->position,psize/2) || isNearTargetWithPeriodicBoundary(pos, static_cast<Cell*>(q)->max_search_radius, q->position, psize/2)))
+                        WalkTreeWithPeriodicBoundary<SearchMode::SYMMETRY>(pos,radius,interaction_list,static_cast<Cell*>(q),psize/2);
+                    else if(q->type == Type::Body) {
+                        double length = 0;
 
-                    if(length <= radius*radius)
-                        interaction_list.emplace_back(static_cast<Body*>(q)->id);
+                        for(int dim = 0;dim<DIM;++dim) {
+                            double dx = PeriodicDistance(pos[dim], q->position[dim], dim);
+                            length += dx * dx;
+                        }
+
+                        double search_radius = static_cast<Body*>(q)->search_radius;
+                        if((length <= radius*radius) || (length <= search_radius * search_radius))
+                            interaction_list.emplace_back(static_cast<Body*>(q)->id);
+                    }
                 }
             }
         }
