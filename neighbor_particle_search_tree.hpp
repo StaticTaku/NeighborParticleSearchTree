@@ -34,54 +34,9 @@
     }
 
 namespace Tree {
-    enum class Type : unsigned char {
-        Body = 0,
-        Cell,
-    };
-
     enum class SearchMode : unsigned char {
         GATHER,
         SYMMETRY
-    };
-
-    struct Node {
-        Type type;
-        double position[3];
-        Node* next;
-    };
-
-    struct Body:public Node {
-        unsigned int id;
-        double search_radius = 0;
-    };
-
-    struct Cell:public Node {
-        double max_search_radius = 0;
-        bool flag = false;
-        Node* more = nullptr;
-        Node** subP;
-
-        Cell() {}
-        
-        Cell(unsigned char DIM):flag(true) {
-            subP = new Node*[1<<DIM];
-        }
-
-        void Construct(unsigned int DIM) {
-            subP = new Node*[1<<DIM];
-            flag = true;
-        }
-
-        ~Cell() {
-            if(flag) {   
-                delete[] subP;
-            }
-        }
-
-        void ClearPosition(unsigned char DIM) {
-            for(int i = 0;i<DIM;++i)
-                position[i] = 0;
-        }
     };
 
     class NeighborParticleSearchTree {
@@ -212,6 +167,51 @@ namespace Tree {
         }
 
     private:
+        enum class Type : unsigned char {
+            Body = 0,
+            Cell,
+        };
+
+        struct Node {
+            Type type;
+            double position[3];
+            Node* next;
+        };
+
+        struct Body:public Node {
+            unsigned int id;
+            double search_radius = 0;
+        };
+
+        struct Cell:public Node {
+            double max_search_radius = 0;
+            bool flag = false;
+            Node* more = nullptr;
+            Node** subP;
+
+            Cell() {}
+            
+            Cell(unsigned char DIM):flag(true) {
+                subP = new Node*[1<<DIM];
+            }
+
+            void Construct(unsigned int DIM) {
+                subP = new Node*[1<<DIM];
+                flag = true;
+            }
+
+            ~Cell() {
+                if(flag) {   
+                    delete[] subP;
+                }
+            }
+
+            void ClearPosition(unsigned char DIM) {
+                for(int i = 0;i<DIM;++i)
+                    position[i] = 0;
+            }
+        };
+        
         int m_reserve_num;
         int m_size;
         Cell* m_root;//root pointer
